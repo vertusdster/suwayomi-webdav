@@ -6,6 +6,7 @@ import io
 
 # 更新的 API 基础路径
 API_URL = "http://127.0.0.1:4567/api/graphql"
+CONTENT_URL = "http://127.0.0.1:4567/"
 headers = {"Content-Type": "application/json"}
 
 # 自定义 MangaDAVProvider，通过 GraphQL 请求章节和页面数据
@@ -47,7 +48,7 @@ class MangaDAVProvider(DAVProvider):
             print("find page_number of : " + page_number)
             if chapter_id:
                 print(f"Serving page {page_number} for chapter {chapter_id} at {path}")
-                return PageResource(self, path, chapter_id, page_number, environ)  # 传递 environ
+                return PageResource(self, path, page_number, environ)  # 传递 environ
 
         return None
 
@@ -162,8 +163,6 @@ class ChapterCollection(DAVCollection):
         else:
             return None
 
-
-# 页面目录类
 class PageCollection(DAVCollection):
     def __init__(self, provider, path, chapter_id, environ):
         # 打印初始化信息以供调试
@@ -171,20 +170,15 @@ class PageCollection(DAVCollection):
         
         # 确保路径正确，转换为字符串并处理
         path = "/" + str(path)
-        print("PageCollection path: " + path)
         super().__init__(path, environ)  # 正确传递 environ
         self.provider = provider
         self.chapter_id = chapter_id
-        self.pages = None  # 在初始化时不加载页面
-        self.environ = environ
+        self.pages = []
+       
 
-    def get_member_names(self):
-        if self.pages is None:
-            # 只有打开章节目录时，才会按需加载页面
-            self.pages = self._get_pages()
-        return [f"page_{i}" for i in range(len(self.pages))]
-
-    def _get_pages(self):
+    def _load_pages(self):
+        """加载页面数据，并缓存结果"""
+        print(f"Fetching pages for chapter {self.chapter_id}")
         # GraphQL 查询章节页面
         query = """
         mutation GET_CHAPTER_PAGES_FETCH($input: FetchChapterPagesInput!) {
@@ -202,48 +196,61 @@ class PageCollection(DAVCollection):
         """
         variables = {"input": {"chapterId": int(self.chapter_id)}}
         response = requests.post(API_URL, json={"query": query, "variables": variables}, headers=headers)
-        return response.json()["data"]["fetchChapterPages"]["pages"]
+        pages = response.json()["data"]["fetchChapterPages"]["pages"]
+        return pages
+
+    def get_member_names(self):
+        """返回所有页面的名称"""
+        if not self.pages:
+            self.pages = self._load_pages()  # 调用 API 获取页面数据
+        return [f"page_{i}" for i in range(len(self.pages))]
 
     def get_member(self, name):
-        page_number = name.split("_")[1]
-        return PageResource(self.provider, self.path + name, self.chapter_id, page_number, self.environ)
+        """根据页面名称返回 PageResource 实例，使用缓存的页面 URL"""
+        if not self.pages:
+            self.pages = self._load_pages()  # 调用 API 获取页面数据
+        page_number = int(name.split("_")[1])  # 从页面名称中提取页面编号
+        page_url = CONTENT_URL + self.pages[page_number]  # 使用缓存的页面 URL
+    
+        return PageResource(self.provider, self.path + name, page_url, self.environ)
+    
 
-
-# 页面资源类
-class PageResource(_DAVResource):  # 使用 _DAVResource 而不是 DAVResource
-    def __init__(self, provider, path, chapter_id, page_number, environ):
+class PageResource(_DAVResource):
+    def __init__(self, provider, path, page_url, environ):
         # 打印初始化信息以供调试
-        print(f"Initializing PageResource with path: {path}, chapter_id: {chapter_id}, page_number: {page_number}")
+        print(f"Initializing PageResource with path: {path}, page_url: {page_url}")
         
         # 确保路径为字符串
         path = "/" + str(path)
-        print("PageResource path: " + path)
         super().__init__(path,False, environ)  # 正确传递 environ
         self.provider = provider
-        self.chapter_id = chapter_id
-        self.page_number = page_number
-        self.page_url = self._get_page_url()
+        self.page_url = page_url  # 使用从 PageCollection 传递过来的页面 URL
+        self._content = None  # 用于缓存页面内容
 
-    def _get_page_url(self):
-        query = """
-        mutation GET_CHAPTER_PAGES_FETCH($input: FetchChapterPagesInput!) {
-          fetchChapterPages(input: $input) {
-            pages
-          }
-        }
-        """
-        variables = {"input": {"chapterId": int(self.chapter_id)}}
-        response = requests.post(API_URL, json={"query": query, "variables": variables}, headers=headers)
-        pages = response.json()["data"]["fetchChapterPages"]["pages"]
-        return pages[int(self.page_number)]
+    def _load_content(self):
+        # 下载页面内容 (图片等) 并缓存
+        print(f"start downloading : " + self.page_url)
+        response = requests.get(self.page_url)
+        self._content = response.content
 
     def get_content_length(self):
-        return None
+        if self._content is None:
+            self._load_content()
+        return len(self._content)  # 返回内容长度
 
     def get_content(self):
-        # 获取页面内容 (图片等)
-        response = requests.get(self.page_url)
-        return io.BytesIO(response.content)
+        if self._content is None:
+            self._load_content()
+        return io.BytesIO(self._content)  # 返回页面内容
+
+    def get_content_type(self):
+        return "image/jpeg"
+
+    def support_ranges(self):
+        return False
+
+    def support_etags(self):
+        return False
 
     def get_display_info(self):
         return {
@@ -251,9 +258,7 @@ class PageResource(_DAVResource):  # 使用 _DAVResource 而不是 DAVResource
             "mimetype": "image/jpeg",
         }
 
-    def get_content_type(self):
-        # 返回 MIME 类型，例如 image/jpeg
-        return "image/jpeg"
+
 # 配置 WsgiDAV 应用程序
 config = {
     "provider_mapping": {"/": MangaDAVProvider()},
