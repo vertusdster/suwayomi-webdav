@@ -1,0 +1,48 @@
+name: Build and Push Docker Image
+
+on:
+  # 触发条件：在推送代码到 main 分支或提交 tag 时
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 检出代码
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # 登录到 GitHub Docker Registry (ghcr.io)
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 构建 Docker 镜像
+      - name: Build Docker image
+        run: |
+          docker build -t ghcr.io/${{ github.repository }}/manga-webdav:${{ github.sha }} .
+
+      # 为 Docker 镜像打上 tag（以 commit hash 以及版本号为 tag）
+      - name: Tag Docker image
+        run: |
+          docker tag ghcr.io/${{ github.repository }}/manga-webdav:${{ github.sha }} ghcr.io/${{ github.repository }}/manga-webdav:latest
+          if [ ! -z "${{ github.ref_name }}" ]; then
+            docker tag ghcr.io/${{ github.repository }}/manga-webdav:${{ github.sha }} ghcr.io/${{ github.repository }}/manga-webdav:${{ github.ref_name }}
+          fi
+
+      # 推送 Docker 镜像到 GitHub Container Registry
+      - name: Push Docker image
+        run: |
+          docker push ghcr.io/${{ github.repository }}/manga-webdav:${{ github.sha }}
+          docker push ghcr.io/${{ github.repository }}/manga-webdav:latest
+          if [ ! -z "${{ github.ref_name }}" ]; then
+            docker push ghcr.io/${{ github.repository }}/manga-webdav:${{ github.ref_name }}
+          fi
