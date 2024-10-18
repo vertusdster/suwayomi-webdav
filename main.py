@@ -3,17 +3,20 @@ from wsgidav.wsgidav_app import WsgiDAVApp
 from wsgidav.dav_provider import DAVProvider, DAVCollection, _DAVResource
 import requests
 import io
+import os
 
-# 更新的 API 基础路径
-API_URL = "http://127.0.0.1:4567/api/graphql"
-CONTENT_URL = "http://127.0.0.1:4567/"
+# 加载 .env 文件中的环境变量
+CONTENT_URL = os.getenv('CONTENT_URL', 'http://127.0.0.1:4567/')
+API_URL = CONTENT_URL + "/api/graphql"
+
 headers = {"Content-Type": "application/json"}
 
-# 自定义 MangaDAVProvider，通过 GraphQL 请求章节和页面数据
+# 自定义 MangaDAVProvider，通过 GraphQL 请求漫画、章节和页面数据
 class MangaDAVProvider(DAVProvider):
     def __init__(self):
         super().__init__()
-        self.chapter_name_to_id = {}  # 用于映射chapter name到chapter_id
+        self.manga_name_to_id = {}  # 用于映射 manga 名称到 manga_id
+        self.chapter_name_to_id = {}  # 用于映射 chapter 名称到 chapter_id
 
     def get_resource_inst(self, path, environ):
         # 打印请求路径以供调试
@@ -23,47 +26,100 @@ class MangaDAVProvider(DAVProvider):
         parts = path.split("/")
         print(f"Requested parts: {parts}")
 
-        # 根目录显示章节列表
+        # 根目录显示漫画清单
         if len(parts) == 1 and parts[0] == "":
-            print(f"Serving chapter collection at root: {path}")
-            return ChapterCollection(self, "/", environ, self.chapter_name_to_id)  # 传递 environ 和 name->id 映射
+            print(f"Serving manga collection at root: {path}")
+            return MangaCollection(self, "/", environ, self.manga_name_to_id)  # 传递 environ 和 manga_name_to_id
         
-        # 章节目录，通过章节名称查找chapter_id
+        # 漫画目录，显示章节清单
         elif len(parts) == 1 and parts[0] != "":
-            chapter_name = parts[0] # 解码路径中的特殊字符
-            print("find chaptername of : " + chapter_name)
+            manga_name = parts[0]  # 获取漫画名称
+            manga_id = self.manga_name_to_id.get(manga_name)
+            if manga_id:
+                print(f"Serving chapter collection for manga {manga_id} at {path}")
+                return ChapterCollection(self, path, manga_name, manga_id, environ)
+            else:
+                print(f"Manga name '{manga_name}' not found.")
+        
+        # 章节目录，显示页面列表
+        elif len(parts) == 2:
+            chapter_name = parts[1]  # 获取章节名称
             chapter_id = self.chapter_name_to_id.get(chapter_name)
             if chapter_id:
                 print(f"Serving page collection for chapter {chapter_id} at {path}")
-                return PageCollection(self, path, chapter_id, environ)  # 传递 environ
+                return PageCollection(self, path, chapter_id, environ)
             else:
+                print(self.chapter_name_to_id)
                 print(f"Chapter name '{chapter_name}' not found.")
-        
-        # 页面文件
-        elif len(parts) == 2:
-            chapter_name = parts[0]  # 解码路径中的特殊字符
-            print("find chaptername of : " + chapter_name)
+
+        # 页面文件，显示具体页面
+        elif len(parts) == 3:
+            chapter_name = parts[1]
+            page_number = int(parts[2].split("_")[1])  # 提取页面编号
             chapter_id = self.chapter_name_to_id.get(chapter_name)
-            page_number = parts[1].split("_")[1]
-            print("find page_number of : " + page_number)
             if chapter_id:
                 print(f"Serving page {page_number} for chapter {chapter_id} at {path}")
-                return PageResource(self, path,"", int(page_number) ,chapter_id, environ)  # 传递 environ
+                return PageResource(self, path, "", page_number, chapter_id, True, environ)
 
         return None
 
 
+# 漫画目录类
+class MangaCollection(DAVCollection):
+    def __init__(self, provider, path, environ, manga_name_to_id):
+        print(f"Initializing MangaCollection with path: {path}")
+        path = str(path) or "/"
+        path = "/" + str(path)
+        super().__init__(path, environ)
+        self.provider = provider
+        self.manga_name_to_id = manga_name_to_id
+        self.mangas = self._get_mangas()
+
+    def _get_mangas(self):
+        # 查询漫画清单
+        query = """
+        query GET_CATEGORY_MANGAS($id: Int!) {
+          category(id: $id) {
+            mangas {
+              nodes {
+                id
+                title
+                author
+              }
+            }
+          }
+        }
+        """
+        variables = {"id": 0}  # 假设类别ID为0
+        response = requests.post(API_URL, json={"operationName": "GET_CATEGORY_MANGAS", "variables": variables, "query": query}, headers=headers)
+        mangas = response.json()["data"]["category"]["mangas"]["nodes"]
+
+        for manga in mangas:
+            self.manga_name_to_id[manga['title']] = manga['id']
+        
+        return mangas
+
+    def get_member_names(self):
+        return [manga['title'] for manga in self.mangas]
+
+    def get_member(self, name):
+        manga_id = self.manga_name_to_id.get(name)
+        if manga_id:
+            return ChapterCollection(self.provider, self.path + name, name, manga_id, self.environ)
+        else:
+            return None
+
+
 # 章节目录类
 class ChapterCollection(DAVCollection):
-    def __init__(self, provider, path, environ, chapter_name_to_id):
-        # 打印初始化信息以供调试
-        print(f"Initializing ChapterCollection with path: {path}")
-        
-        # 确保传入的路径为有效字符串
+    def __init__(self, provider, path, manga_name, manga_id, environ):
+        print(f"Initializing ChapterCollection with path: {path}, manga_id: {manga_id}")
         path = str(path) or "/"
-        super().__init__(path, environ)  # 正确传递 environ
+        path = "/" + str(path)
+        super().__init__(path, environ)
         self.provider = provider
-        self.chapter_name_to_id = chapter_name_to_id
+        self.manga_name = manga_name
+        self.manga_id = manga_id
         self.chapters = self._get_chapters()
 
     def _get_chapters(self):
@@ -102,32 +158,14 @@ class ChapterCollection(DAVCollection):
           __typename
         }
 
-        fragment PAGE_INFO on PageInfo {
-          endCursor
-          hasNextPage
-          hasPreviousPage
-          startCursor
-          __typename
-        }
-
-        query GET_CHAPTERS($after: Cursor, $before: Cursor, $condition: ChapterConditionInput, $filter: ChapterFilterInput, $first: Int, $last: Int, $offset: Int, $orderBy: ChapterOrderBy, $orderByType: SortOrder) {
+        query GET_CHAPTERS($condition: ChapterConditionInput, $orderBy: ChapterOrderBy, $orderByType: SortOrder) {
           chapters(
-            after: $after
-            before: $before
             condition: $condition
-            filter: $filter
-            first: $first
-            last: $last
-            offset: $offset
             orderBy: $orderBy
             orderByType: $orderByType
           ) {
             nodes {
               ...FULL_CHAPTER_FIELDS
-              __typename
-            }
-            pageInfo {
-              ...PAGE_INFO
               __typename
             }
             totalCount
@@ -136,136 +174,113 @@ class ChapterCollection(DAVCollection):
         }
         """
         variables = {
-            "condition": {"mangaId": 142},
+            "condition": {"mangaId": self.manga_id},
             "orderBy": "SOURCE_ORDER",
             "orderByType": "DESC"
         }
-        response = requests.post(API_URL, json={"query": query, "variables": variables}, headers=headers)
+        response = requests.post(API_URL, json={"operationName": "GET_CHAPTERS", "variables": variables, "query": query}, headers=headers)
         chapters = response.json()["data"]["chapters"]["nodes"]
 
-        # 构建 chapter_name -> chapter_id 映射
+        # 只使用 `chapter_name` 作为键
         for chapter in chapters:
-            self.chapter_name_to_id[chapter['name']] = chapter['id']
+            self.provider.chapter_name_to_id[self.manga_name + chapter['name'] ] = chapter['id']
         
         return chapters
 
     def get_member_names(self):
-        # 使用 URL 编码后的章节名称作为目录名
-        return [chapter['name'] for chapter in self.chapters]
+        return [chapter['name']   for chapter in self.chapters]
 
     def get_member(self, name):
-        # 使用解码后的章节名称查找对应的 chapter_id
-        print("get member:" + name)
-        chapter_name = name
-        chapter_id = self.chapter_name_to_id.get(chapter_name)
+        chapter_id = self.provider.chapter_name_to_id.get(self.manga_name + name)
         if chapter_id:
             return PageCollection(self.provider, self.path + name, chapter_id, self.environ)
         else:
             return None
 
+
+# 页面集合类
 class PageCollection(DAVCollection):
     def __init__(self, provider, path, chapter_id, environ):
-        # 打印初始化信息以供调试
         print(f"Initializing PageCollection with path: {path}, chapter_id: {chapter_id}")
-        
-        # 确保路径正确，转换为字符串并处理
         path = "/" + str(path)
-        super().__init__(path, environ)  # 正确传递 environ
+        super().__init__(path, environ)
         self.provider = provider
         self.chapter_id = chapter_id
-        self.pages = []
-       
+        self.pages = self._load_pages()
 
     def _load_pages(self):
-        """加载页面数据，并缓存结果"""
-        print(f"Fetching pages for chapter {self.chapter_id}")
         # GraphQL 查询章节页面
         query = """
         mutation GET_CHAPTER_PAGES_FETCH($input: FetchChapterPagesInput!) {
           fetchChapterPages(input: $input) {
-            clientMutationId
             chapter {
               id
               pageCount
-              __typename
             }
             pages
-            __typename
           }
         }
         """
         variables = {"input": {"chapterId": int(self.chapter_id)}}
-        response = requests.post(API_URL, json={"query": query, "variables": variables}, headers=headers)
+        response = requests.post(API_URL, json={"operationName": "GET_CHAPTER_PAGES_FETCH", "variables": variables, "query": query}, headers=headers)
         pages = response.json()["data"]["fetchChapterPages"]["pages"]
         return pages
 
     def get_member_names(self):
-        """返回所有页面的名称"""
-        if not self.pages:
-            self.pages = self._load_pages()  # 调用 API 获取页面数据
         return [f"page_{i}" for i in range(len(self.pages))]
 
     def get_member(self, name):
-        """根据页面名称返回 PageResource 实例，使用缓存的页面 URL"""
-        if not self.pages:
-            self.pages = self._load_pages()  # 调用 API 获取页面数据
-        page_number = int(name.split("_")[1])  # 从页面名称中提取页面编号
+        page_number = int(name.split("_")[1])
         page_url = CONTENT_URL + self.pages[page_number]  # 使用缓存的页面 URL
-    
-        return PageResource(self.provider, self.path + name, page_url, page_number, self.chapter_id, self.environ)
-    
+        return PageResource(self.provider, self.path + name, page_url, page_number, self.chapter_id, False, self.environ)
 
+
+# 页面资源类
 class PageResource(_DAVResource):
-    def __init__(self, provider, path, page_url, page_number,chapter_id, environ):
-        # 打印初始化信息以供调试
-        print(f"Initializing PageResource with path: {path}, page_url: {page_url}")
-        
-        # 确保路径为字符串
+    def __init__(self, provider, path, page_url, page_number, chapter_id, need_download, environ):
+        print(f"Initializing PageResource with path: {path}, page_url: {page_url}, need_download: {need_download}")
         path = "/" + str(path)
-        super().__init__(path,False, environ)  # 正确传递 environ
+        super().__init__(path, False, environ)
         self.provider = provider
-        self.page_url = page_url  # 使用从 PageCollection 传递过来的页面 URL
+        self.page_url = page_url
         self.page_number = page_number
-        self._content = None  # 用于缓存页面内容
+        self._content = b""
         self.chapter_id = chapter_id
+        self.need_download = need_download
 
     def _load_content_mod(self):
-        # 下载页面内容 (图片等) 并缓存
-        print("self.page_url is " + self.page_url)
-        if self.page_url == "" :
-            print("self.page_url is empty, updating page_url with page_number :" + str(self.page_number))
-            query = """
-            mutation GET_CHAPTER_PAGES_FETCH($input: FetchChapterPagesInput!) {
-            fetchChapterPages(input: $input) {
-                clientMutationId
-                chapter {
-                id
-                pageCount
-                __typename
+        # 下载页面内容并缓存
+        if self.need_download:
+            if self.page_url == "":
+                query = """
+                mutation GET_CHAPTER_PAGES_FETCH($input: FetchChapterPagesInput!) {
+                  fetchChapterPages(input: $input) {
+                    chapter {
+                      id
+                      pageCount
+                    }
+                    pages
+                  }
                 }
-                pages
-                __typename
-            }
-            }
-            """
-            variables = {"input": {"chapterId": int(self.chapter_id)}}
-            response = requests.post(API_URL, json={"query": query, "variables": variables}, headers=headers)
-            pages = response.json()["data"]["fetchChapterPages"]["pages"]
-            print("self.page_number : " + str(self.page_number))
-            self.page_url = CONTENT_URL + pages[self.page_number]  # 使用缓存的页面 URL
-        print(f"start downloading : " + self.page_url)
-        response = requests.get(self.page_url)
-        self._content = response.content
+                """
+                variables = {"input": {"chapterId": int(self.chapter_id)}}
+                response = requests.post(API_URL, json={"operationName": "GET_CHAPTER_PAGES_FETCH", "variables": variables, "query": query}, headers=headers)
+                pages = response.json()["data"]["fetchChapterPages"]["pages"]
+                self.page_url = CONTENT_URL + pages[self.page_number]  # 更新 page_url
+
+            print(f"Downloading page content from: {self.page_url}")
+            response = requests.get(self.page_url)
+            self._content = response.content
 
     def get_content_length(self):
-        if self._content is None:
+        if self._content == b"" and self.need_download:
             self._load_content_mod()
-        return len(self._content)  # 返回内容长度
+        return len(self._content)
 
     def get_content(self):
-        if self._content is None:
+        if self._content == b"" and self.need_download:
             self._load_content_mod()
-        return io.BytesIO(self._content)  # 返回页面内容
+        return io.BytesIO(self._content)
 
     def get_content_type(self):
         return "image/jpeg"
