@@ -1,3 +1,2 @@
 wsgidav
 requests
-dotenv
