@@ -10,6 +10,7 @@ COPY . /app
 # 安装所需的 Python 依赖项
 # 假设你有一个 requirements.txt 文件，列出所有需要的依赖
 COPY requirements.txt /app/requirements.txt
+RUN pwd
 RUN pip install --no-cache-dir -r requirements.txt
 
 # 如果没有 requirements.txt，直接安装 wsgidav 和 requests
