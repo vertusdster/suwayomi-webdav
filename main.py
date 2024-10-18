@@ -48,7 +48,7 @@ class MangaDAVProvider(DAVProvider):
             print("find page_number of : " + page_number)
             if chapter_id:
                 print(f"Serving page {page_number} for chapter {chapter_id} at {path}")
-                return PageResource(self, path, page_number, environ)  # 传递 environ
+                return PageResource(self, path,"", int(page_number) ,chapter_id, environ)  # 传递 environ
 
         return None
 
@@ -136,7 +136,7 @@ class ChapterCollection(DAVCollection):
         }
         """
         variables = {
-            "condition": {"mangaId": 3},
+            "condition": {"mangaId": 142},
             "orderBy": "SOURCE_ORDER",
             "orderByType": "DESC"
         }
@@ -212,11 +212,11 @@ class PageCollection(DAVCollection):
         page_number = int(name.split("_")[1])  # 从页面名称中提取页面编号
         page_url = CONTENT_URL + self.pages[page_number]  # 使用缓存的页面 URL
     
-        return PageResource(self.provider, self.path + name, page_url, self.environ)
+        return PageResource(self.provider, self.path + name, page_url, page_number, self.chapter_id, self.environ)
     
 
 class PageResource(_DAVResource):
-    def __init__(self, provider, path, page_url, environ):
+    def __init__(self, provider, path, page_url, page_number,chapter_id, environ):
         # 打印初始化信息以供调试
         print(f"Initializing PageResource with path: {path}, page_url: {page_url}")
         
@@ -225,22 +225,46 @@ class PageResource(_DAVResource):
         super().__init__(path,False, environ)  # 正确传递 environ
         self.provider = provider
         self.page_url = page_url  # 使用从 PageCollection 传递过来的页面 URL
+        self.page_number = page_number
         self._content = None  # 用于缓存页面内容
+        self.chapter_id = chapter_id
 
-    def _load_content(self):
+    def _load_content_mod(self):
         # 下载页面内容 (图片等) 并缓存
+        print("self.page_url is " + self.page_url)
+        if self.page_url == "" :
+            print("self.page_url is empty, updating page_url with page_number :" + str(self.page_number))
+            query = """
+            mutation GET_CHAPTER_PAGES_FETCH($input: FetchChapterPagesInput!) {
+            fetchChapterPages(input: $input) {
+                clientMutationId
+                chapter {
+                id
+                pageCount
+                __typename
+                }
+                pages
+                __typename
+            }
+            }
+            """
+            variables = {"input": {"chapterId": int(self.chapter_id)}}
+            response = requests.post(API_URL, json={"query": query, "variables": variables}, headers=headers)
+            pages = response.json()["data"]["fetchChapterPages"]["pages"]
+            print("self.page_number : " + str(self.page_number))
+            self.page_url = CONTENT_URL + pages[self.page_number]  # 使用缓存的页面 URL
         print(f"start downloading : " + self.page_url)
         response = requests.get(self.page_url)
         self._content = response.content
 
     def get_content_length(self):
         if self._content is None:
-            self._load_content()
+            self._load_content_mod()
         return len(self._content)  # 返回内容长度
 
     def get_content(self):
         if self._content is None:
-            self._load_content()
+            self._load_content_mod()
         return io.BytesIO(self._content)  # 返回页面内容
 
     def get_content_type(self):
@@ -249,7 +273,7 @@ class PageResource(_DAVResource):
     def support_ranges(self):
         return False
 
-    def support_etags(self):
+    def support_etag(self):
         return False
 
     def get_display_info(self):
