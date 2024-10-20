@@ -55,7 +55,8 @@ class MangaDAVProvider(DAVProvider):
         # 页面文件，显示具体页面
         elif len(parts) == 3:
             chapter_name = parts[1]
-            page_number = int(parts[2].split("_")[1])  # 提取页面编号
+            page_name_with_extension = parts[2]  # 提取带有.jpg后缀的文件名
+            page_number = int(page_name_with_extension.split("_")[1].split(".")[0])  # 提取页面编号
             chapter_id = self.chapter_name_to_id.get(chapter_name)
             if chapter_id:
                 print(f"Serving page {page_number} for chapter {chapter_id} at {path}")
@@ -236,10 +237,10 @@ class PageCollection(DAVCollection):
         return pages
 
     def get_member_names(self):
-        return [f"page_{i}" for i in range(len(self.pages))]
+        return [f"page_{i}.jpg"  for i in range(len(self.pages))]
 
     def get_member(self, name):
-        page_number = int(name.split("_")[1])
+        page_number = int(name.split("_")[1].split(".")[0])
         page_url = CONTENT_URL + self.pages[page_number]  # 使用缓存的页面 URL
         return PageResource(self.provider, self.path + name, page_url, page_number, self.chapter_id, False, self.environ)
 
