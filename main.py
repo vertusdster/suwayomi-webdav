@@ -37,7 +37,7 @@ class MangaDAVProvider(DAVProvider):
             manga_id = self.manga_name_to_id.get(manga_name)
             if manga_id:
                 print(f"Serving chapter collection for manga {manga_id} at {path}")
-                return ChapterCollection(self, path, manga_name, manga_id, environ)
+                return ChapterCollection(self, path, manga_name, manga_id, True, environ)
             else:
                 print(f"Manga name '{manga_name}' not found.")
         
@@ -47,7 +47,7 @@ class MangaDAVProvider(DAVProvider):
             chapter_id = self.chapter_name_to_id.get(chapter_name)
             if chapter_id:
                 print(f"Serving page collection for chapter {chapter_id} at {path}")
-                return PageCollection(self, path, chapter_id, environ)
+                return PageCollection(self, path, chapter_id,True , environ)
             else:
                 print(self.chapter_name_to_id)
                 print(f"Chapter name '{chapter_name}' not found.")
@@ -105,14 +105,14 @@ class MangaCollection(DAVCollection):
     def get_member(self, name):
         manga_id = self.manga_name_to_id.get(name)
         if manga_id:
-            return ChapterCollection(self.provider, self.path + name, name, manga_id, self.environ)
+            return ChapterCollection(self.provider, self.path + name, name, manga_id, False , self.environ)
         else:
             return None
 
 
 # 章节目录类
 class ChapterCollection(DAVCollection):
-    def __init__(self, provider, path, manga_name, manga_id, environ):
+    def __init__(self, provider, path, manga_name, manga_id, need_download, environ):
         print(f"Initializing ChapterCollection with path: {path}, manga_id: {manga_id}")
         path = str(path) or "/"
         path = "/" + str(path)
@@ -120,7 +120,9 @@ class ChapterCollection(DAVCollection):
         self.provider = provider
         self.manga_name = manga_name
         self.manga_id = manga_id
+        self.need_download = need_download
         self.chapters = self._get_chapters()
+
 
     def _get_chapters(self):
         # GraphQL 查询章节列表
@@ -178,13 +180,16 @@ class ChapterCollection(DAVCollection):
             "orderBy": "SOURCE_ORDER",
             "orderByType": "DESC"
         }
-        response = requests.post(API_URL, json={"operationName": "GET_CHAPTERS", "variables": variables, "query": query}, headers=headers)
-        chapters = response.json()["data"]["chapters"]["nodes"]
+        if self.need_download:
+            response = requests.post(API_URL, json={"operationName": "GET_CHAPTERS", "variables": variables, "query": query}, headers=headers)
+            chapters = response.json()["data"]["chapters"]["nodes"]
 
-        # 只使用 `chapter_name` 作为键
-        for chapter in chapters:
-            self.provider.chapter_name_to_id[self.manga_name + chapter['name'] ] = chapter['id']
-        
+
+            # 只使用 `chapter_name` 作为键
+            for chapter in chapters:
+                self.provider.chapter_name_to_id[self.manga_name + chapter['name'] ] = chapter['id']
+        else:
+            chapters= []
         return chapters
 
     def get_member_names(self):
@@ -193,19 +198,20 @@ class ChapterCollection(DAVCollection):
     def get_member(self, name):
         chapter_id = self.provider.chapter_name_to_id.get(self.manga_name + name)
         if chapter_id:
-            return PageCollection(self.provider, self.path + name, chapter_id, self.environ)
+            return PageCollection(self.provider, self.path + name, chapter_id,False , self.environ)
         else:
             return None
 
 
 # 页面集合类
 class PageCollection(DAVCollection):
-    def __init__(self, provider, path, chapter_id, environ):
+    def __init__(self, provider, path, chapter_id, need_download , environ):
         print(f"Initializing PageCollection with path: {path}, chapter_id: {chapter_id}")
         path = "/" + str(path)
         super().__init__(path, environ)
         self.provider = provider
         self.chapter_id = chapter_id
+        self.need_download = need_download
         self.pages = self._load_pages()
 
     def _load_pages(self):
@@ -221,9 +227,12 @@ class PageCollection(DAVCollection):
           }
         }
         """
-        variables = {"input": {"chapterId": int(self.chapter_id)}}
-        response = requests.post(API_URL, json={"operationName": "GET_CHAPTER_PAGES_FETCH", "variables": variables, "query": query}, headers=headers)
-        pages = response.json()["data"]["fetchChapterPages"]["pages"]
+        if self.need_download:
+            variables = {"input": {"chapterId": int(self.chapter_id)}}
+            response = requests.post(API_URL, json={"operationName": "GET_CHAPTER_PAGES_FETCH", "variables": variables, "query": query}, headers=headers)
+            pages = response.json()["data"]["fetchChapterPages"]["pages"]
+        else:
+            pages = []
         return pages
 
     def get_member_names(self):
