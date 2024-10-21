@@ -312,7 +312,7 @@ class PageResource(_DAVResource):
 config = {
     "provider_mapping": {"/": MangaDAVProvider()},
     "simple_dc": {"user_mapping": {"*": True}},  # 允许所有用户访问
-    "verbose": 2,
+     "verbose": 3,  # 输出更多详细日志
 }
 
 # 启动 WebDAV 服务器
