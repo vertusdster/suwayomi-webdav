@@ -45,9 +45,9 @@ class MangaDAVProvider(DAVProvider):
         elif len(parts) == 2:
             manga_name = parts[0]  # 获取 manga_name
             chapter_name = parts[1]  # 获取章节名称
-            chapter_id = self.chapter_name_to_id.get(chapter_name)
+            chapter_id = self.chapter_name_to_id.get(manga_name + chapter_name)
             if chapter_id:
-                print(f"Serving page collection for chapter {chapter_id} at {path}")
+                print(f"Serving page collection for chapter {chapter_id}  of manga {manga_name} at {path}")
                 # 传递 manga_name 到 PageCollection
                 return PageCollection(self, path, chapter_id, chapter_name, manga_name, True, environ)
             else:
@@ -56,12 +56,13 @@ class MangaDAVProvider(DAVProvider):
 
         # 页面文件，显示具体页面
         elif len(parts) == 3:
+            manga_name = parts[0]
             chapter_name = parts[1]
             page_name_with_extension = parts[2]  # 提取带有.jpg后缀的文件名
-            page_number = int(page_name_with_extension.split("_")[1].split(".")[0])  # 提取页面编号
-            chapter_id = self.chapter_name_to_id.get(chapter_name)
+            page_number = int(page_name_with_extension.split("_")[1].split(".")[0]) -1  # 提取页面编号
+            chapter_id = self.chapter_name_to_id.get(manga_name + chapter_name)
             if chapter_id:
-                print(f"Serving page {page_number} for chapter {chapter_id} at {path}")
+                print(f"Serving page {page_number} for chapter {chapter_id}  of manga {manga_name} at {path}")
                 return PageResource(self, path, "", page_number, chapter_id, True, environ)
 
         return None
@@ -197,7 +198,7 @@ class ChapterCollection(DAVCollection):
 
             # 只使用 `chapter_name` 作为键
             for chapter in chapters:
-                self.provider.chapter_name_to_id[chapter['name']] = chapter['id']
+                self.provider.chapter_name_to_id[self.manga_name + chapter['name']] = chapter['id']
         else:
             chapters= []
         return chapters
@@ -207,7 +208,7 @@ class ChapterCollection(DAVCollection):
 
     def get_member(self, name):
         chapter_name = name.replace(f"{self.manga_name}/", "")
-        chapter_id = self.provider.chapter_name_to_id.get(chapter_name)
+        chapter_id = self.provider.chapter_name_to_id.get(self.manga_name + chapter_name)
         if chapter_id:
             return PageCollection(self.provider, self.path + name, chapter_id, chapter_name, self.manga_name ,False , self.environ)
         else:
@@ -290,9 +291,11 @@ class PageResource(_DAVResource):
                   }
                 }
                 """
+                print(f"Loading page of page number: {self.page_number }")
                 variables = {"input": {"chapterId": int(self.chapter_id)}}
                 response = requests.post(API_URL, json={"operationName": "GET_CHAPTER_PAGES_FETCH", "variables": variables, "query": query}, headers=headers)
                 pages = response.json()["data"]["fetchChapterPages"]["pages"]
+                print(pages)
                 self.page_url = CONTENT_URL + pages[self.page_number]  # 更新 page_url
 
             print(f"Downloading page content from: {self.page_url}")
