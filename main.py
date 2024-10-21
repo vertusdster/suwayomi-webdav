@@ -210,7 +210,7 @@ class ChapterCollection(DAVCollection):
         chapter_name = name.replace(f"{self.manga_name}/", "")
         chapter_id = self.provider.chapter_name_to_id.get(self.manga_name + chapter_name)
         if chapter_id:
-            return PageCollection(self.provider, self.path + name, chapter_id, chapter_name, self.manga_name ,False , self.environ)
+            return PageCollection(self.provider, "/" + name, chapter_id, chapter_name, self.manga_name ,False , self.environ)
         else:
             return None
 
@@ -259,7 +259,7 @@ class PageCollection(DAVCollection):
     def get_member(self, name):
         page_number = int(name.split("_")[1].split(".")[0]) - 1  # 从 page_1.jpg 获取索引 0
         page_url = CONTENT_URL + self.pages[page_number]  # 使用缓存的页面 UR
-        return PageResource(self.provider, self.path  + name, page_url, page_number, self.chapter_id, False, self.environ)
+        return PageResource(self.provider, "/" + name, page_url, page_number, self.chapter_id, False, self.environ)
 
 # 页面资源类
 class PageResource(_DAVResource):
