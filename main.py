@@ -43,11 +43,13 @@ class MangaDAVProvider(DAVProvider):
         
         # 章节目录，显示页面列表
         elif len(parts) == 2:
+            manga_name = parts[0]  # 获取 manga_name
             chapter_name = parts[1]  # 获取章节名称
             chapter_id = self.chapter_name_to_id.get(chapter_name)
             if chapter_id:
                 print(f"Serving page collection for chapter {chapter_id} at {path}")
-                return PageCollection(self, path, chapter_id,True , environ)
+                # 传递 manga_name 到 PageCollection
+                return PageCollection(self, path, chapter_id, chapter_name, manga_name, True, environ)
             else:
                 print(self.chapter_name_to_id)
                 print(f"Chapter name '{chapter_name}' not found.")
@@ -126,6 +128,7 @@ class ChapterCollection(DAVCollection):
         self.manga_id = manga_id
         self.need_download = need_download
         self.chapters = self._get_chapters()
+
 
     def get_content_type(self):
         # 指定目录的 MIME 类型为 httpd/unix-directory
@@ -206,22 +209,24 @@ class ChapterCollection(DAVCollection):
         chapter_name = name.replace(f"{self.manga_name}/", "")
         chapter_id = self.provider.chapter_name_to_id.get(chapter_name)
         if chapter_id:
-            return PageCollection(self.provider, self.path + name, chapter_id,False , self.environ)
+            return PageCollection(self.provider, self.path + name, chapter_id, chapter_name, self.manga_name ,False , self.environ)
         else:
             return None
 
 
 # 页面集合类
 class PageCollection(DAVCollection):
-    def __init__(self, provider, path, chapter_id, need_download , environ):
+    def __init__(self, provider, path, chapter_id, chapter_name, manga_name,  need_download , environ):
         print(f"Initializing PageCollection with path: {path}, chapter_id: {chapter_id}")
         if not path.startswith("/"):
             path = "/" + str(path)
         super().__init__(path, environ)
         self.provider = provider
+        self.manga_name = manga_name
         self.chapter_id = chapter_id
         self.need_download = need_download
         self.pages = self._load_pages()
+        self.chapter_name = chapter_name
 
     def get_content_type(self):
         # 指定目录的 MIME 类型为 httpd/unix-directory
@@ -249,10 +254,10 @@ class PageCollection(DAVCollection):
         return pages
 
     def get_member_names(self):
-        return [f"page_{i}.jpg"  for i in range(len(self.pages))]
-
+        return [f"{self.manga_name}/{self.chapter_name}/page_{i+1}.jpg" for i in range(len(self.pages))]
+    
     def get_member(self, name):
-        page_number = int(name.split("_")[1].split(".")[0])
+        page_number = int(name.split("_")[1].split(".")[0]) - 1  # 从 page_1.jpg 获取索引 0
         page_url = CONTENT_URL + self.pages[page_number]  # 使用缓存的页面 UR
         return PageResource(self.provider, self.path  + name, page_url, page_number, self.chapter_id, False, self.environ)
 
