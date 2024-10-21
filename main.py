@@ -122,7 +122,7 @@ class MangaCollection(DAVCollection):
 class ChapterCollection(DAVCollection):
     def __init__(self, provider, path, manga_name, manga_id, need_download, environ):
         print(f"Initializing ChapterCollection with path: {path}, manga_id: {manga_id}")
-        path = "/" + manga_name + "/" + str(path).strip("/")
+        path = "/" + str(path).strip("/")
         super().__init__(path, environ)
         self.provider = provider
         self.manga_name = manga_name
@@ -219,7 +219,7 @@ class ChapterCollection(DAVCollection):
 class PageCollection(DAVCollection):
     def __init__(self, provider, path, chapter_id, chapter_name, manga_name,  need_download , environ):
         print(f"Initializing PageCollection with path: {path}, chapter_id: {chapter_id}")
-        path = "/" + manga_name + "/" + chapter_name + "/" + str(path).strip("/")
+        path = "/" + str(path).strip("/")
         super().__init__(path, environ)
         self.provider = provider
         self.manga_name = manga_name
@@ -264,7 +264,7 @@ class PageCollection(DAVCollection):
 # 页面资源类
 class PageResource(_DAVResource):
     def __init__(self, provider, path, page_url, page_number, chapter_id, need_download, environ):
-        print(f"Initializing PageResource with path: {path}, page_url: {page_curl}, need_download: {need_download}")
+        print(f"Initializing PageResource with path: {path}, page_url: {page_url}, need_download: {need_download}")
         if not path.startswith("/"):
             path = "/" + str(path)
         super().__init__(path, False, environ)
