@@ -110,14 +110,16 @@ class MangaCollection(DAVCollection):
             return ChapterCollection(self.provider, self.path + name, name, manga_id, False , self.environ)
         else:
             return None
-
+        
+    def get_content_type(self):
+        # 指定目录的 MIME 类型为 httpd/unix-directory
+        return "httpd/unix-directory"
 
 # 章节目录类
 class ChapterCollection(DAVCollection):
     def __init__(self, provider, path, manga_name, manga_id, need_download, environ):
         print(f"Initializing ChapterCollection with path: {path}, manga_id: {manga_id}")
-        if not path.startswith("/"):
-            path = "/" + str(path)
+        path = "/" + manga_name + "/" + str(path).strip("/")
         super().__init__(path, environ)
         self.provider = provider
         self.manga_name = manga_name
@@ -125,6 +127,9 @@ class ChapterCollection(DAVCollection):
         self.need_download = need_download
         self.chapters = self._get_chapters()
 
+    def get_content_type(self):
+        # 指定目录的 MIME 类型为 httpd/unix-directory
+        return "httpd/unix-directory"
 
     def _get_chapters(self):
         # GraphQL 查询章节列表
@@ -189,16 +194,17 @@ class ChapterCollection(DAVCollection):
 
             # 只使用 `chapter_name` 作为键
             for chapter in chapters:
-                self.provider.chapter_name_to_id[self.manga_name + chapter['name'] ] = chapter['id']
+                self.provider.chapter_name_to_id[chapter['name']] = chapter['id']
         else:
             chapters= []
         return chapters
 
     def get_member_names(self):
-        return [chapter['name']   for chapter in self.chapters]
+        return [f"{self.manga_name}/{chapter['name']}" for chapter in self.chapters]
 
     def get_member(self, name):
-        chapter_id = self.provider.chapter_name_to_id.get(self.manga_name + name)
+        chapter_name = name.replace(f"{self.manga_name}/", "")
+        chapter_id = self.provider.chapter_name_to_id.get(chapter_name)
         if chapter_id:
             return PageCollection(self.provider, self.path + name, chapter_id,False , self.environ)
         else:
@@ -217,6 +223,10 @@ class PageCollection(DAVCollection):
         self.need_download = need_download
         self.pages = self._load_pages()
 
+    def get_content_type(self):
+        # 指定目录的 MIME 类型为 httpd/unix-directory
+        return "httpd/unix-directory"
+    
     def _load_pages(self):
         # GraphQL 查询章节页面
         query = """
