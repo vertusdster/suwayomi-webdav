@@ -8,6 +8,11 @@ import os
 # 加载 .env 文件中的环境变量
 CONTENT_URL = os.getenv('CONTENT_URL', 'http://127.0.0.1:4567/')
 API_URL = CONTENT_URL + "/api/graphql"
+DUMMY_IMAGE = (
+    b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06"
+    b"\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00"
+    b"\x01\x0d\n\x2d\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+)
 
 headers = {"Content-Type": "application/json"}
 
@@ -274,7 +279,7 @@ class PageResource(_DAVResource):
         self._content = b""
         self.chapter_id = chapter_id
         self.need_download = need_download
-
+        self.dummy_image = DUMMY_IMAGE  # 准备一个 Dummy 图片
     def _load_content_mod(self):
         # 下载页面内容并缓存
         if self.need_download:
@@ -300,15 +305,17 @@ class PageResource(_DAVResource):
             print(f"Downloading page content from: {self.page_url}")
             response = requests.get(self.page_url)
             self._content = response.content
+        else:
+            # 如果不需要下载，使用 Dummy 图片
+            print("Using dummy image as placeholder")
+            self._content = self.dummy_image
 
     def get_content_length(self):
-        if self._content == b"" and self.need_download:
-            self._load_content_mod()
+        self._load_content_mod()
         return len(self._content)
 
     def get_content(self):
-        if self._content == b"" and self.need_download:
-            self._load_content_mod()
+        self._load_content_mod()
         return io.BytesIO(self._content)
 
     def get_content_type(self):
