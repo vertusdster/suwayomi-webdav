@@ -264,7 +264,7 @@ class PageCollection(DAVCollection):
     def get_member(self, name):
         page_number = int(name.split("_")[1].split(".")[0]) - 1  # 从 page_1.jpg 获取索引 0
         page_url = CONTENT_URL + self.pages[page_number]  # 使用缓存的页面 UR
-        return PageResource(self.provider, "/" + name, page_url, page_number, self.chapter_id, False, self.environ)
+        return PageResource(self.provider, "/" + name, page_url, page_number, self.chapter_id, True, self.environ)
 
 # 页面资源类
 class PageResource(_DAVResource):
@@ -313,6 +313,8 @@ class PageResource(_DAVResource):
     def get_content_length(self):
         self._load_content_mod()
         return len(self._content)
+    
+
 
     def get_content(self):
         self._load_content_mod()
@@ -320,6 +322,7 @@ class PageResource(_DAVResource):
 
     def get_content_type(self):
         return "image/jpeg"
+    
 
     def support_ranges(self):
         return False
