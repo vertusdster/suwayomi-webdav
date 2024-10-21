@@ -243,8 +243,8 @@ class PageCollection(DAVCollection):
 
     def get_member(self, name):
         page_number = int(name.split("_")[1].split(".")[0])
-        page_url = CONTENT_URL + self.pages[page_number].lstrip("/")  # 使用缓存的页面 UR
-        return PageResource(self.provider, self.path.rstrip("/") + "/" + name, page_url, page_number, self.chapter_id, False, self.environ)
+        page_url = CONTENT_URL + self.pages[page_number]  # 使用缓存的页面 UR
+        return PageResource(self.provider, self.path  + name, page_url, page_number, self.chapter_id, False, self.environ)
 
 # 页面资源类
 class PageResource(_DAVResource):
