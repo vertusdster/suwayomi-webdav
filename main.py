@@ -70,7 +70,8 @@ class MangaCollection(DAVCollection):
     def __init__(self, provider, path, environ, manga_name_to_id):
         print(f"Initializing MangaCollection with path: {path}")
         path = str(path) or "/"
-        path = "/" + str(path)
+        if not path.startswith("/"):
+            path = "/" + str(path)
         super().__init__(path, environ)
         self.provider = provider
         self.manga_name_to_id = manga_name_to_id
@@ -115,8 +116,8 @@ class MangaCollection(DAVCollection):
 class ChapterCollection(DAVCollection):
     def __init__(self, provider, path, manga_name, manga_id, need_download, environ):
         print(f"Initializing ChapterCollection with path: {path}, manga_id: {manga_id}")
-        path = str(path) or "/"
-        path = "/" + str(path)
+        if not path.startswith("/"):
+            path = "/" + str(path)
         super().__init__(path, environ)
         self.provider = provider
         self.manga_name = manga_name
@@ -208,7 +209,8 @@ class ChapterCollection(DAVCollection):
 class PageCollection(DAVCollection):
     def __init__(self, provider, path, chapter_id, need_download , environ):
         print(f"Initializing PageCollection with path: {path}, chapter_id: {chapter_id}")
-        path = "/" + str(path)
+        if not path.startswith("/"):
+            path = "/" + str(path)
         super().__init__(path, environ)
         self.provider = provider
         self.chapter_id = chapter_id
@@ -241,15 +243,15 @@ class PageCollection(DAVCollection):
 
     def get_member(self, name):
         page_number = int(name.split("_")[1].split(".")[0])
-        page_url = CONTENT_URL + self.pages[page_number]  # 使用缓存的页面 URL
-        return PageResource(self.provider, self.path + name, page_url, page_number, self.chapter_id, False, self.environ)
-
+        page_url = CONTENT_URL + self.pages[page_number].lstrip("/")  # 使用缓存的页面 UR
+        return PageResource(self.provider, self.path.rstrip("/") + "/" + name, page_url, page_number, self.chapter_id, False, self.environ)
 
 # 页面资源类
 class PageResource(_DAVResource):
     def __init__(self, provider, path, page_url, page_number, chapter_id, need_download, environ):
         print(f"Initializing PageResource with path: {path}, page_url: {page_url}, need_download: {need_download}")
-        path = "/" + str(path)
+        if not path.startswith("/"):
+            path = "/" + str(path)
         super().__init__(path, False, environ)
         self.provider = provider
         self.page_url = page_url
