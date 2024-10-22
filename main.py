@@ -14,11 +14,12 @@ DUMMY_IMAGE = (
     b"\x01\x0d\n\x2d\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
 )
 page_resource_cache = {}
+page_collection_cache = {}
 headers = {"Content-Type": "application/json"}
 
 # 自定义 MangaDAVProvider，通过 GraphQL 请求漫画、章节和页面数据
 class MangaDAVProvider(DAVProvider):
-    page_collection_cache = {}
+    
     def __init__(self):
         super().__init__()
         self.manga_name_to_id = {}  # 用于映射 manga 名称到 manga_id
@@ -53,9 +54,17 @@ class MangaDAVProvider(DAVProvider):
             chapter_name = parts[1]  # 获取章节名称
             chapter_id = self.chapter_name_to_id.get(manga_name + chapter_name)
             if chapter_id:
-                print(f"Serving page collection for chapter {chapter_id}  of manga {manga_name} at {path}")
-                # 传递 manga_name 到 PageCollection
-                return PageCollection(self, path, chapter_id, chapter_name, manga_name, True, environ)
+                if chapter_id in page_collection_cache:
+                    print(f"Using cached PageCollection for {chapter_id}")
+                    return page_collection_cache[chapter_id]
+                else:
+                    # 创建新的 PageCollection 实例并缓存
+                    print(f"Serving page collection for chapter {chapter_id}  of manga {manga_name} at {path}")
+                    # 传递 manga_name 到 PageCollection
+                    resource =  PageCollection(self, path, chapter_id, chapter_name, manga_name, True, environ)
+                    page_collection_cache[chapter_id] = resource
+                    return resource
+
             else:
                 print(self.chapter_name_to_id)
                 print(f"Chapter name '{chapter_name}' not found.")
@@ -68,9 +77,19 @@ class MangaDAVProvider(DAVProvider):
             page_number = int(page_name_with_extension.split("_")[1].split(".")[0]) -1  # 提取页面编号
             chapter_id = self.chapter_name_to_id.get(manga_name + chapter_name)
             if chapter_id:
+                page_collection = page_collection_cache[chapter_id]
+                page_url = CONTENT_URL + page_collection.pages[page_number]  # 使用缓存的页面 UR
                 print(f"Serving page {page_number} for chapter {chapter_id}  of manga {manga_name} at {path}")
-                return PageResource(self, path, "", page_number, chapter_id, True, environ)
-
+               
+                if page_url in page_resource_cache:
+                    print(f"Using cached PageResource for {page_url}")
+                    return page_resource_cache[page_url]
+                else:
+                    # 创建新的 PageResource 实例并缓存
+                    print(f"Creating new PageResource for {page_url}")
+                    resource =   PageResource(self, path, page_url, page_number, chapter_id, True, environ)
+                    page_resource_cache[page_url] = resource
+                    return resource
         return None
 
 
@@ -218,13 +237,14 @@ class ChapterCollection(DAVCollection):
         chapter_name = name.replace(f"{self.manga_name}/", "")
         chapter_id = self.provider.chapter_name_to_id.get(self.manga_name + chapter_name)
         if chapter_id:
-            return PageCollection(self.provider, "/" + name, chapter_id, chapter_name, self.manga_name ,False , self.environ)
+            return PageCollection(self.provider, "/" + name, chapter_id, chapter_name, self.manga_name ,False, self.environ)
         else:
             return None
 
 
 # 页面集合类
 class PageCollection(DAVCollection):
+    pages = []
     def __init__(self, provider, path, chapter_id, chapter_name, manga_name,  need_download , environ):
         print(f"Initializing PageCollection with path: {path}, chapter_id: {chapter_id}")
         path = "/" + str(path).strip("/")
@@ -233,7 +253,7 @@ class PageCollection(DAVCollection):
         self.manga_name = manga_name
         self.chapter_id = chapter_id
         self.need_download = need_download
-        self.pages = self._load_pages()
+        self._load_pages()
         self.chapter_name = chapter_name
 
     def get_content_type(self):
@@ -253,13 +273,11 @@ class PageCollection(DAVCollection):
           }
         }
         """
-        if self.need_download:
+        if self.need_download and self.pages ==[]:
             variables = {"input": {"chapterId": int(self.chapter_id)}}
             response = requests.post(API_URL, json={"operationName": "GET_CHAPTER_PAGES_FETCH", "variables": variables, "query": query}, headers=headers)
-            pages = response.json()["data"]["fetchChapterPages"]["pages"]
-        else:
-            pages = []
-        return pages
+            self.pages = response.json()["data"]["fetchChapterPages"]["pages"]
+       
 
     def get_member_names(self):
         return [f"{self.manga_name}/{self.chapter_name}/page_{i+1}.jpg" for i in range(len(self.pages))]
@@ -275,7 +293,7 @@ class PageCollection(DAVCollection):
         else:
             # 创建新的 PageResource 实例并缓存
             print(f"Creating new PageResource for {page_url}")
-            resource = PageResource(self.provider, "/" + name, page_url, page_number, self.chapter_id, False, self.environ)
+            resource = PageResource(self.provider, "/" + name, page_url, page_number, self.chapter_id, True, self.environ)
             page_resource_cache[page_url] = resource
             return resource
         
@@ -298,23 +316,7 @@ class PageResource(_DAVResource):
         # 下载页面内容并缓存
         if self.need_download:
             if self.page_url == "":
-                query = """
-                mutation GET_CHAPTER_PAGES_FETCH($input: FetchChapterPagesInput!) {
-                  fetchChapterPages(input: $input) {
-                    chapter {
-                      id
-                      pageCount
-                    }
-                    pages
-                  }
-                }
-                """
-                print(f"Loading page url of page number: {self.page_number }")
-                variables = {"input": {"chapterId": int(self.chapter_id)}}
-                response = requests.post(API_URL, json={"operationName": "GET_CHAPTER_PAGES_FETCH", "variables": variables, "query": query}, headers=headers)
-                pages = response.json()["data"]["fetchChapterPages"]["pages"]
-                print(pages)
-                self.page_url = CONTENT_URL + pages[self.page_number]  # 更新 page_url
+                self.page_url = CONTENT_URL + self.pages[self.page_number]  # 更新 page_url
             if self._content == b"" or  self._content == self.dummy_image:
                 print(f"downloading page content : {self.page_url}")
                 response = requests.get(self.page_url)
@@ -340,7 +342,9 @@ class PageResource(_DAVResource):
     def get_content_type(self):
         return "image/jpeg"
     
-
+    def support_content_length(self):
+        return True
+    
     def support_ranges(self):
         return False
 
