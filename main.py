@@ -357,7 +357,6 @@ config = {
     "verbose": 3,  # 输出更多详细日志,
     "max_propfind_depth": 1,  # 限制 PROPFIND 的最大深度为 1
 }
-}
 
 # 启动 WebDAV 服务器
 if __name__ == "__main__":
