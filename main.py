@@ -267,8 +267,7 @@ class PageCollection(DAVCollection):
     def get_member(self, name):
         page_number = int(name.split("_")[1].split(".")[0]) - 1  # 从 page_1.jpg 获取索引 0
         page_url = CONTENT_URL + self.pages[page_number]  # 使用缓存的页面 UR
-        
-    
+
         # 检查全局缓存中是否已存在该 page_url 对应的 PageResource
         if page_url in page_resource_cache:
             print(f"Using cached PageResource for {page_url}")
@@ -276,7 +275,7 @@ class PageCollection(DAVCollection):
         else:
             # 创建新的 PageResource 实例并缓存
             print(f"Creating new PageResource for {page_url}")
-            resource = PageResource(self.provider, "/" + name, page_url, page_number, self.chapter_id, True, self.environ)
+            resource = PageResource(self.provider, "/" + name, page_url, page_number, self.chapter_id, False, self.environ)
             page_resource_cache[page_url] = resource
             return resource
         
@@ -355,7 +354,9 @@ class PageResource(_DAVResource):
 config = {
     "provider_mapping": {"/": MangaDAVProvider()},
     "simple_dc": {"user_mapping": {"*": True}},  # 允许所有用户访问
-     "verbose": 3,  # 输出更多详细日志
+    "verbose": 3,  # 输出更多详细日志,
+    "max_propfind_depth": 1,  # 限制 PROPFIND 的最大深度为 1
+}
 }
 
 # 启动 WebDAV 服务器
