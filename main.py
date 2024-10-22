@@ -371,7 +371,7 @@ config = {
     "max_propfind_depth": 0,  # 限制 PROPFIND 的最大深度为 1
     "emulate_win32_lastmod": True,  # 解决某些客户端依赖的 Windows 兼容性问题
     "re_encode_path_info": True,  # 处理 URL 中编码不一致的问题
-}
+
 }
 
 # 启动 WebDAV 服务器
