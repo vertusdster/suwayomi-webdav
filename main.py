@@ -321,14 +321,15 @@ class PageResource(_DAVResource):
                 self._content = response.content
                 self.content_length = len(self._content)
         else:
-            # 如果不需要下载，使用 Dummy 图片
-            print("Using dummy image as placeholder")
-            self._content = self.dummy_image
-            self.content_length = len(self._content)
+            if self._content == b"":
+                # 如果不需要下载，使用 Dummy 图片
+                print("Using dummy image as placeholder")
+                self._content = self.dummy_image
+                self.content_length = 1048576
 
     def get_content_length(self):
         self._load_content_mod()
-        return len(self._content)
+        return self.content_length
     
 
 
