@@ -325,7 +325,7 @@ class PageResource(_DAVResource):
                 # 如果不需要下载，使用 Dummy 图片
                 print("Using dummy image as placeholder")
                 self._content = self.dummy_image
-                self.content_length = 0
+                self.content_length = -1
 
     def get_content_length(self):
         self._load_content_mod()
