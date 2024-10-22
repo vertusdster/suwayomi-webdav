@@ -290,6 +290,7 @@ class PageResource(_DAVResource):
         self.page_url = page_url
         self.page_number = page_number
         self._content = b""
+        self.content_length = 0
         self.chapter_id = chapter_id
         self.need_download = need_download
         self.dummy_image = DUMMY_IMAGE  # 准备一个 Dummy 图片
@@ -318,10 +319,12 @@ class PageResource(_DAVResource):
                 print(f"downloading page content : {self.page_url}")
                 response = requests.get(self.page_url)
                 self._content = response.content
+                self.content_length = len(self._content)
         else:
             # 如果不需要下载，使用 Dummy 图片
             print("Using dummy image as placeholder")
             self._content = self.dummy_image
+            self.content_length = len(self._content)
 
     def get_content_length(self):
         self._load_content_mod()
